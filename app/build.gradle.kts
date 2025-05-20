@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
     alias(libs.plugins.kotlin.kapt)
+    alias(libs.plugins.hilt.gradle)
 }
 
 android {
@@ -82,6 +83,7 @@ dependencies {
     // Room
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
+    kapt(libs.room.compiler)
 
     // ViewModel (Compose ile)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

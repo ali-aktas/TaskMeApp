@@ -1,8 +1,14 @@
 package com.aliaktas.taskme.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable // YENİ IMPORT
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -13,87 +19,122 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType // YENİ IMPORT
+import androidx.compose.ui.platform.LocalHapticFeedback // YENİ IMPORT
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.aliaktas.taskme.ui.theme.TaskCompletedColor
-import com.aliaktas.taskme.ui.theme.TaskMeTheme
-import com.aliaktas.taskme.ui.theme.TaskPendingColor
+import com.aliaktas.taskme.ui.theme.*
 
-/**
- * Görev kartı bileşeni
- *
- * @param taskTitle Görevin başlığı
- * @param isCompleted Görevin tamamlanma durumu
- * @param onTaskClick Görev kartına tıklandığında çalışacak fonksiyon
- * @param onCheckClick Görevin tamamlanma durumunu değiştiren checkbox'a tıklandığında çalışacak fonksiyon
- */
+@OptIn(ExperimentalFoundationApi::class) // YENİ ANNOTATION
 @Composable
 fun TaskCard(
     taskTitle: String,
     isCompleted: Boolean,
     onTaskClick: () -> Unit,
     onCheckClick: () -> Unit,
+    onLongClick: () -> Unit, // YENİ PARAMETRE
     modifier: Modifier = Modifier
 ) {
-    // Card, MaterialDesign kart bileşenidir - CardView'in Compose karşılığı
+    val cardElevation by animateDpAsState(targetValue = if (isCompleted) 2.dp else 6.dp, label = "elevation")
+    val textAlpha by animateFloatAsState(targetValue = if (isCompleted) 0.6f else 1f, label = "textAlpha") // [cite: 42]
+    val titleColor by animateColorAsState(
+        targetValue = if (isCompleted) TaskCompletedColor else MaterialTheme.colorScheme.onSurface,
+        label = "titleColor"
+    )
+    val haptic = LocalHapticFeedback.current // YENİ
+
+    val gradientBrush = Brush.linearGradient(
+        colors = listOf(
+            if (isCompleted) SurfaceLight.copy(alpha = 0.7f) else GradientStartBlue.copy(alpha = 0.8f),
+            if (isCompleted) SurfaceLight.copy(alpha = 0.9f) else GradientEndBlue // [cite: 43]
+        )
+    )
+
     Card(
-        // Kartın görünümü ve davranışı için Modifier kullanılır
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clickable { onTaskClick() },
-        // Kart özellikleri
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(8.dp),
+            .shadow( // [cite: 44]
+                elevation = if (isCompleted) 2.dp else 8.dp,
+                shape = RoundedCornerShape(16.dp),
+                spotColor = if (isCompleted) Color.Transparent else GlowColorBlue.copy(alpha = 0.5f),
+                ambientColor = if (isCompleted) Color.Transparent else GlowColorBlue.copy(alpha = 0.2f)
+            )
+            .combinedClickable( // MODIFIED
+                onClick = { onTaskClick() },
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                }
+            ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = Color.Transparent
         )
     ) {
-        // Row, LinearLayout horizontal orientation'ın Compose karşılığı
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .background(brush = gradientBrush, shape = RoundedCornerShape(16.dp))
+                .padding(horizontal = 16.dp, vertical = 20.dp), // [cite: 46]
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween // [cite: 47]
         ) {
-            // Görev metni
             Text(
                 text = taskTitle,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (isCompleted) TaskCompletedColor else TaskPendingColor,
-                textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                // Text bileşeni, Row içinde ağırlığı 1f olarak ayarlanır
-                // böylece mümkün olduğunca yer kaplar ama checkbox'a da yer bırakır
-                modifier = Modifier.weight(1f)
+                style = MaterialTheme.typography.titleMedium,
+                color = titleColor,
+                textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None, // [cite: 47, 48]
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 12.dp) // [cite: 49]
+                    .graphicsLayer(alpha = textAlpha) // [cite: 49]
             )
 
-            // Tamamlama kutucuğu (checkbox)
+            val checkBgColor by animateColorAsState(
+                targetValue = if (isCompleted) MaterialTheme.colorScheme.primary else Color.Transparent,
+                label = "checkBg" // [cite: 50]
+            )
+            val checkBorderColor by animateColorAsState(
+                targetValue = if (isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                label = "checkBorder"
+            )
+            val checkIconColor by animateColorAsState(
+                targetValue = if (isCompleted) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                label = "checkIcon" // [cite: 51]
+            )
+
             Box(
                 modifier = Modifier
-                    .size(24.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(if (isCompleted) MaterialTheme.colorScheme.primary else Color.Transparent)
+                    .size(28.dp) // [cite: 52]
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(checkBgColor)
                     .border(
                         width = 2.dp,
-                        color = MaterialTheme.colorScheme.primary,
-                        shape = RoundedCornerShape(4.dp)
+                        color = checkBorderColor, // [cite: 53]
+                        shape = RoundedCornerShape(8.dp)
                     )
                     .clickable { onCheckClick() },
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center // [cite: 54]
             ) {
-                // Eğer görev tamamlandıysa tik işareti göster
                 if (isCompleted) {
                     Icon(
                         imageVector = Icons.Default.Check,
-                        contentDescription = "Tamamlandı",
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
+                        contentDescription = "Tamamlandı", // [cite: 55]
+                        tint = checkIconColor,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -101,24 +142,27 @@ fun TaskCard(
     }
 }
 
-// Preview fonksiyonu, tasarım sırasında nasıl görüneceğini gösterir
-@Preview(showBackground = true)
+@Preview(showBackground = true, backgroundColor = 0xFFF0F4F8)
 @Composable
 fun TaskCardPreview() {
     TaskMeTheme {
-        Column {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp) // [cite: 57]
+        ) {
             TaskCard(
-                taskTitle = "Projeyi bitir",
+                taskTitle = "Yeni modern tasarımı Jetpack Compose ile entegre et",
                 isCompleted = false,
                 onTaskClick = {},
-                onCheckClick = {}
+                onCheckClick = {},
+                onLongClick = {} // YENİ (Preview için)
             )
-            Spacer(modifier = Modifier.height(8.dp))
             TaskCard(
-                taskTitle = "E-postaları yanıtla",
+                taskTitle = "E-postaları yanıtla ve toplantı notlarını düzenle",
                 isCompleted = true,
                 onTaskClick = {},
-                onCheckClick = {}
+                onCheckClick = {},
+                onLongClick = {} // YENİ (Preview için)
             )
         }
     }

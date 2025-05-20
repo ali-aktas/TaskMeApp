@@ -61,4 +61,12 @@ interface TaskDao {
      */
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getTaskById(id: Long): TaskEntity?
+
+    /**
+     * Belirli bir güne ait tüm görevleri siler.
+     *
+     * @param dayId Silinecek görevlerin ait olduğu günün ID'si
+     */
+    @Query("DELETE FROM tasks WHERE dayId = :dayId") // YENİ FONKSİYON
+    suspend fun deleteTasksByDayId(dayId: Long)
 }

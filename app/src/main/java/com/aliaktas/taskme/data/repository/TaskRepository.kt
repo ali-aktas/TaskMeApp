@@ -61,6 +61,15 @@ class TaskRepository @Inject constructor(
     }
 
     /**
+     * Belirli bir güne ait tüm görevleri siler.
+     *
+     * @param dayId Silinecek görevlerin ait olduğu günün ID'si
+     */
+    suspend fun deleteTasksByDayId(dayId: Long) { // YENİ FONKSİYON
+        taskDao.deleteTasksByDayId(dayId)
+    }
+
+    /**
      * Bir görevi siler
      *
      * @param task Silinecek görev
