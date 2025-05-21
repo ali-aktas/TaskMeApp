@@ -92,6 +92,9 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
 
+    // SplashScreen API
+    implementation("androidx.core:core-splashscreen:1.0.1") // YENİ EKLENDİ (versiyonu kontrol et)
+
     // Unit & UI Test
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

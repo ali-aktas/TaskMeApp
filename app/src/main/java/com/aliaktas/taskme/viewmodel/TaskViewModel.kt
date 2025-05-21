@@ -1,9 +1,11 @@
 package com.aliaktas.taskme.viewmodel
 
+import android.util.Log // Loglama için import ekle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.aliaktas.taskme.data.repository.DayRepository // Bu import TaskViewModel'de zaten vardı
+import com.aliaktas.taskme.data.repository.DayRepository
 import com.aliaktas.taskme.data.repository.TaskRepository
+import com.aliaktas.taskme.domain.model.Day // Day domain modelini import et
 import com.aliaktas.taskme.domain.model.Task
 import com.aliaktas.taskme.ui.states.HomeUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -21,34 +23,68 @@ class TaskViewModel @Inject constructor(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
+        Log.d("TaskViewModel", "ViewModel initialized, calling loadData.")
         loadData()
     }
 
     private fun loadData() {
         viewModelScope.launch {
-            combine(
-                dayRepository.getAllDays(),
-                taskRepository.getAllTasks()
-            ) { days, tasks ->
-                if (days.isEmpty()) {
-                    val defaultDays = createDefaultDays() // Bu List<com.aliaktas.taskme.domain.model.Day> döndürür
-
-                    //  İŞTE DEĞİŞİKLİK BURADA: .map { it.toEntity() } kısmını kaldırıyoruz
-                    dayRepository.insertDays(defaultDays) // ÖNCEDEN: dayRepository.insertDays(defaultDays.map { it.toEntity() }) idi
-
+            dayRepository.getAllDays().collectLatest { daysFromDb ->
+                Log.d("TaskViewModel", "Observed daysFromDb: ${daysFromDb.size}")
+                if (daysFromDb.isEmpty()) {
+                    Log.d("TaskViewModel", "daysFromDb is empty. Creating default days.")
+                    val defaultDays = createDefaultDays()
+                    dayRepository.insertDays(defaultDays) // Bu işlem getAllDays flow'unu tekrar tetiklemeli
+                    // _uiState'i burada defaultDays ile direkt güncellemek yerine,
+                    // getAllDays flow'unun yeni veriyi yaymasını bekleyebiliriz.
+                    // Ancak ilk açılışta hızlı göstermek için aşağıdaki güncelleme de bir strateji olabilir.
+                    // Şimdilik, Flow'un doğal akışına bırakalım ve sadece insert yapalım.
+                    // Eğer Flow hemen güncelleme yapmazsa, aşağıdaki update bloğunu tekrar değerlendirebiliriz.
+                    // VEYA, UI state'ini hemen defaultDays ile set edip, Flow'dan gelen güncellemeyle birleşmesini sağlayabiliriz.
+                    // İkinci bir combine ile tasks'ı da alalım.
                     _uiState.update { currentState ->
                         currentState.copy(
-                            days = defaultDays, // ViewModel state'i domain modellerini tutar
-                            tasks = tasks,
+                            days = defaultDays, // Önce varsayılanlarla doldur
                             selectedDayId = defaultDays.firstOrNull()?.id ?: 0L
                         )
                     }
+                    // Görevleri ayrıca toplayalım ve UI state'ine ekleyelim
+                    taskRepository.getAllTasks().collect { tasksFromDb ->
+                        Log.d("TaskViewModel", "Observed tasksFromDb with default days: ${tasksFromDb.size}")
+                        _uiState.update { currentState ->
+                            currentState.copy(
+                                tasks = tasksFromDb
+                                // days ve selectedDayId zaten yukarıda set edilmiş olmalı
+                            )
+                        }
+                    }
+
                 } else {
-                    // ... (mevcut kod)
+                    Log.d("TaskViewModel", "daysFromDb is NOT empty. Count: ${daysFromDb.size}")
+                    // Günler zaten var, şimdi görevleri toplayıp UI state'ini güncelleyelim.
+                    taskRepository.getAllTasks().collect { tasksFromDb ->
+                        Log.d("TaskViewModel", "Observed tasksFromDb with existing days: ${tasksFromDb.size}")
+                        _uiState.update { currentState ->
+                            val currentSelectedDayId = currentState.selectedDayId
+                            currentState.copy(
+                                days = daysFromDb,
+                                tasks = tasksFromDb,
+                                selectedDayId = if (daysFromDb.any { it.id == currentSelectedDayId }) {
+                                    currentSelectedDayId
+                                } else {
+                                    daysFromDb.firstOrNull()?.id ?: 0L
+                                }
+                            )
+                        }
+                    }
                 }
-            }.collect()
+            }
         }
     }
+
+    // addTask, toggleTaskCompletion ve diğer fonksiyonlar aynı kalacak...
+    // ... (önceki yanıtta verilen TaskViewModel fonksiyonları) ...
+
 
     fun addTask(title: String, dayId: Long) {
         viewModelScope.launch {
@@ -71,9 +107,6 @@ class TaskViewModel @Inject constructor(
         _uiState.update { it.copy(selectedDayId = dayId) }
     }
 
-    // --- YENİ FONKSİYONLAR ---
-
-    // Görev Eylemleri için
     fun onTaskLongPressed(task: Task) {
         _uiState.update {
             it.copy(taskToTakeActionOn = task, showTaskActionDialog = true)
@@ -138,7 +171,7 @@ class TaskViewModel @Inject constructor(
                         taskToEditText = ""
                     )
                 }
-            } else { // Başlık boşsa veya görev null ise dialogu kapat
+            } else {
                 _uiState.update {
                     it.copy(
                         showEditTaskDialog = false,
@@ -160,9 +193,11 @@ class TaskViewModel @Inject constructor(
         }
     }
 
-    // Gün Görevlerini Temizleme Eylemleri için
     fun onDayCardLongPressed(dayId: Long) {
-        if (_uiState.value.tasks.none { it.dayId == dayId }) return // O gün görev yoksa işlem yapma
+        // O gün hiç tamamlanmamış görev yoksa bile menüyü gösterelim, belki de sadece o günü silmek istiyordur.
+        // Veya sadece görev varsa gösterelim, bu UI kararına bağlı.
+        // Şimdilik, günün var olması yeterli.
+        if (_uiState.value.days.none{ it.id == dayId}) return
 
         _uiState.update {
             it.copy(dayIdToClearTasks = dayId, showClearDayTasksConfirmDialog = true)
@@ -189,17 +224,19 @@ class TaskViewModel @Inject constructor(
         }
     }
 
-    private fun createDefaultDays() = listOf(
-        com.aliaktas.taskme.domain.model.Day(id = 1, name = "Pazartesi", order = 0),
-        com.aliaktas.taskme.domain.model.Day(id = 2, name = "Salı", order = 1),
-        com.aliaktas.taskme.domain.model.Day(id = 3, name = "Çarşamba", order = 2),
-        com.aliaktas.taskme.domain.model.Day(id = 4, name = "Perşembe", order = 3),
-        com.aliaktas.taskme.domain.model.Day(id = 5, name = "Cuma", order = 4),
-        com.aliaktas.taskme.domain.model.Day(id = 6, name = "Cumartesi", order = 5),
-        com.aliaktas.taskme.domain.model.Day(id = 7, name = "Pazar", order = 6)
+    private fun createDefaultDays(): List<Day> = listOf( // Tipini List<Day> olarak belirtelim
+        Day(id = 1, name = "Pazartesi", order = 0),
+        Day(id = 2, name = "Salı", order = 1),
+        Day(id = 3, name = "Çarşamba", order = 2),
+        Day(id = 4, name = "Perşembe", order = 3),
+        Day(id = 5, name = "Cuma", order = 4),
+        Day(id = 6, name = "Cumartesi", order = 5),
+        Day(id = 7, name = "Pazar", order = 6)
     )
 
-    // DayRepository'nin insertDays fonksiyonu DayEntity listesi bekliyor.
+    // Bu extension fonksiyon artık DayRepository içinde olduğu için ViewModel'de gereksiz.
+    // Eğer DayRepository dışına da lazımsa (ki şu an değil gibi), ortak bir yere taşınabilir.
+    /*
     private fun com.aliaktas.taskme.domain.model.Day.toEntity(): com.aliaktas.taskme.data.local.DayEntity {
         return com.aliaktas.taskme.data.local.DayEntity(
             id = this.id,
@@ -207,4 +244,5 @@ class TaskViewModel @Inject constructor(
             order = this.order
         )
     }
+    */
 }
